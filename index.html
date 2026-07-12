@@ -250,7 +250,46 @@
   .custom-word-row .cw-hanzi{font-family:var(--font-hanzi); font-size:18px; font-weight:600;}
   .custom-word-row .cw-pinyin{font-size:12px; color:var(--blue); margin-left:6px;}
   .custom-word-row .cw-meaning{font-size:12px; color:var(--gray); display:block; margin-top:2px;}
-  .cw-del{background:none; border:none; color:var(--red); font-size:14px; font-weight:600; cursor:pointer; flex-shrink:0; margin-left:10px;}
+  .cw-del{background:none; border:none; color:var(--red); font-size:14px; font-weight:600; cursor:pointer; flex-shrink:0; margin-left:10px;}  /* ---------- listen tab / track list ---------- */
+  .track-row{display:flex; align-items:center; gap:12px; padding:13px 16px; border-bottom:0.5px solid var(--hairline); cursor:pointer;}
+  .track-row:last-child{border-bottom:none;}
+  .track-row:active{background:#F2F2F3;}
+  .track-icon{width:38px; height:38px; border-radius:10px; background:linear-gradient(135deg,#FF3B30,#FF6B60); display:flex; align-items:center; justify-content:center; flex-shrink:0;}
+  .track-icon svg{width:18px; height:18px;}
+  .track-info{flex:1; min-width:0;}
+  .track-title{font-size:15px; font-weight:600; color:var(--ink); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  .track-file{font-size:12px; color:var(--gray); margin-top:1px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  .track-del{background:none; border:none; color:var(--red); font-size:13px; font-weight:600; cursor:pointer; flex-shrink:0; padding:4px 6px;}
+
+  /* ---------- player sheet (iOS Now Playing style) ---------- */
+  .player-backdrop{
+    position:fixed; inset:0; background:rgba(0,0,0,0.35); z-index:190;
+    opacity:0; pointer-events:none; transition:opacity .25s;
+  }
+  .player-backdrop.show{opacity:1; pointer-events:auto;}
+  .player-sheet{
+    position:fixed; left:0; right:0; bottom:0; z-index:200;
+    background:var(--card); border-radius:24px 24px 0 0;
+    box-shadow:0 -8px 30px rgba(0,0,0,0.18);
+    padding:10px 20px calc(28px + var(--safe-bottom));
+    transform:translateY(110%); transition:transform .32s cubic-bezier(.2,.9,.3,1.1);
+  }
+  .player-sheet.show{transform:translateY(0);}
+  .player-handle{width:36px; height:5px; background:var(--gray-light); border-radius:3px; margin:4px auto 14px;}
+  .player-close{position:absolute; top:14px; right:16px; background:none; border:none; width:30px; height:30px; display:flex; align-items:center; justify-content:center; cursor:pointer;}
+  .player-title{font-size:16px; font-weight:700; text-align:center; margin-bottom:16px; padding:0 30px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  #waveform{width:100%; margin-bottom:8px; border-radius:10px; overflow:hidden; cursor:pointer;}
+  .player-time-row{display:flex; justify-content:space-between; font-size:11.5px; color:var(--gray); font-variant-numeric:tabular-nums; margin-bottom:16px;}
+  .speed-row{display:flex; gap:6px; margin-bottom:20px;}
+  .speed-row .speed-chip{
+    flex:1; padding:8px 2px; border-radius:10px; background:#F2F2F3; text-align:center;
+    font-size:12.5px; font-weight:600; color:var(--ink-2); cursor:pointer;
+  }
+  .speed-row .speed-chip.on{background:var(--red-dim); color:var(--red);}
+  .player-controls{display:flex; align-items:center; justify-content:center; gap:34px;}
+  .player-controls .round-btn{position:relative; width:52px; height:52px;}
+  .player-controls .round-btn.big{width:68px; height:68px; background:var(--red);}
+  .round-btn-label{position:absolute; bottom:6px; left:50%; transform:translateX(-50%); font-size:9px; font-weight:700; color:var(--ink);}
 </style>
 </head>
 <body>
@@ -444,6 +483,66 @@
     <div style="text-align:center; color:var(--gray-light); font-size:11px; padding:6px 0 20px;" id="storageFooterNote"></div>
   </div>
 
+  <!-- ===================== 듣기 (Listen) ===================== -->
+  <div class="screen" id="screen-listen">
+    <div class="section" style="margin-top:14px;">
+      <div class="section-title" style="display:flex; justify-content:space-between; align-items:center; padding-right:12px;">
+        <span>듣기 자료 · <span id="trackCount">0</span>개</span>
+        <span id="listenManageToggle" style="color:var(--blue); font-weight:600; cursor:pointer; text-transform:none; font-size:13px;">관리</span>
+      </div>
+      <div class="card-group" id="trackList"></div>
+    </div>
+
+    <div class="section" id="listenManageSection" style="display:none;">
+      <div class="section-title">여러 개 한번에 추가</div>
+      <div class="card-group">
+        <div class="form-row">
+          <textarea id="trackBulkInput" rows="5" placeholder="한 줄에 하나씩: 파일명.mp3 | 제목&#10;예)&#10;01_intro.mp3 | 1과 소개&#10;02_dialogue.mp3 | 1과 회화"></textarea>
+        </div>
+      </div>
+      <button class="primary-btn" id="addTracksBulkBtn">한번에 추가</button>
+      <div style="font-size:12px; color:var(--gray); padding:10px 16px 0; line-height:1.6;">
+        파일명은 GitHub 저장소의 <code>audio/</code> 폴더에 올려두신 mp3 파일명과 정확히 같아야 해요.
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== 플레이어 시트 ===================== -->
+  <div class="player-sheet" id="playerSheet">
+    <div class="player-handle"></div>
+    <button class="player-close" id="playerCloseBtn">
+      <svg viewBox="0 0 24 24" fill="none"><path d="M6 6l12 12M18 6L6 18" stroke="#8E8E93" stroke-width="2" stroke-linecap="round"/></svg>
+    </button>
+    <div class="player-title" id="playerTitle">-</div>
+    <div id="waveform"></div>
+    <div class="player-time-row">
+      <span id="playerCurTime">0:00</span>
+      <span id="playerDuration">0:00</span>
+    </div>
+    <div class="speed-row" id="speedRow">
+      <div class="speed-chip" data-speed="0.75">0.75x</div>
+      <div class="speed-chip" data-speed="1">1x</div>
+      <div class="speed-chip on" data-speed="1.25">1.25x</div>
+      <div class="speed-chip" data-speed="1.5">1.5x</div>
+      <div class="speed-chip" data-speed="2">2x</div>
+    </div>
+    <div class="player-controls">
+      <button class="round-btn" id="playerBack5">
+        <svg viewBox="0 0 24 24" fill="none"><path d="M9 6L3 12l6 6" stroke="#1C1C1E" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span class="round-btn-label">5</span>
+      </button>
+      <button class="round-btn big" id="playerPlayPause">
+        <svg id="playerPlayIcon" viewBox="0 0 24 24" fill="#fff"><path d="M8 5v14l11-7z"/></svg>
+        <svg id="playerPauseIcon" viewBox="0 0 24 24" fill="#fff" style="display:none;"><rect x="6" y="5" width="4" height="14"/><rect x="14" y="5" width="4" height="14"/></svg>
+      </button>
+      <button class="round-btn" id="playerFwd5">
+        <span class="round-btn-label">5</span>
+        <svg viewBox="0 0 24 24" fill="none"><path d="M15 6l6 6-6 6" stroke="#1C1C1E" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+    </div>
+  </div>
+  <div class="player-backdrop" id="playerBackdrop"></div>
+
   <div class="tabbar">
     <button class="tab" data-screen="study">
       <svg viewBox="0 0 24 24" fill="none"><rect x="4" y="5" width="16" height="14" rx="3" stroke="currentColor" stroke-width="1.8"/><path d="M8 9h8M8 13h5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
@@ -452,6 +551,10 @@
     <button class="tab" data-screen="test">
       <svg viewBox="0 0 24 24" fill="none"><path d="M12 4v16M12 4l-4 4M12 4l4 4M12 20l-4-4M12 20l4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
       테스트
+    </button>
+    <button class="tab" data-screen="listen">
+      <svg viewBox="0 0 24 24" fill="none"><path d="M4 13a8 8 0 0116 0v5a2 2 0 01-2 2h-1a1 1 0 01-1-1v-4a1 1 0 011-1h2M4 13v3a1 1 0 001 1h2a1 1 0 001-1v-4a1 1 0 00-1-1H4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      듣기
     </button>
     <button class="tab" data-screen="settings">
       <svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.8"/><path d="M19 12a7 7 0 00-.14-1.4l2-1.55-2-3.46-2.36.95a7 7 0 00-2.42-1.4L13.7 2.6h-3.4l-.38 2.54a7 7 0 00-2.42 1.4l-2.36-.95-2 3.46 2 1.55A7 7 0 005 12c0 .47.05.94.14 1.4l-2 1.55 2 3.46 2.36-.95a7 7 0 002.42 1.4l.38 2.54h3.4l.38-2.54a7 7 0 002.42-1.4l2.36.95 2-3.46-2-1.55A7 7 0 0019 12z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>
@@ -464,6 +567,7 @@
 
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/wavesurfer.js/2.0.4/wavesurfer.min.js"></script>
 <script>
 const FIREBASE_CONFIG = {
   apiKey: "AIzaSyCcLtQL2r4c3q-NFcV9aLFijZFEZaiR4CI",
@@ -495,6 +599,7 @@ const PROGRESS_DOC = firebaseOk ? firestoreDb.collection('hsk_progress').doc('ma
 
 let memorized = new Set();
 let currentLevel = '3급'; // '3급' | '4급' | 'custom'
+let TRACKS = [];
 let settingsByLevel = {
   '3급': { dayFrom:1, dayTo:5, includeBonus:false },
   '4급': { dayFrom:1, dayTo:5, includeBonus:false },
@@ -512,6 +617,7 @@ async function loadAll(){
       if(data.settings) settings = Object.assign(settings, data.settings);
       if(data.settingsByLevel) settingsByLevel = Object.assign(settingsByLevel, data.settingsByLevel);
       if(Array.isArray(data.custom)) CUSTOM = data.custom;
+      if(Array.isArray(data.tracks)) TRACKS = data.tracks;
       if(data.currentLevel) currentLevel = data.currentLevel;
     } else {
       await PROGRESS_DOC.set(buildSyncPayload());
@@ -523,6 +629,7 @@ function buildSyncPayload(){
     memorized: [...memorized],
     settings, settingsByLevel, currentLevel,
     custom: CUSTOM,
+    tracks: TRACKS,
     updatedAt: new Date().toISOString()
   };
 }
@@ -539,6 +646,7 @@ function persistDebounced(){
 async function saveMemorized(){ persistDebounced(); }
 async function saveSettings(){ persistDebounced(); }
 async function saveCustom(){ persistDebounced(); }
+async function saveTracks(){ persistDebounced(); }
 
 /* ---------------- word pool helpers ---------------- */
 function activeVocab(){ return currentLevel==='4급' ? VOCAB4 : VOCAB3; }
@@ -590,15 +698,15 @@ function toast(msg){
 }
 
 /* ---------------- tab switching ---------------- */
-const screens = ['study','test','settings'];
+const screens = ['study','test','settings','listen'];
 function showScreen(name){
   screens.forEach(s=>{
     document.getElementById('screen-'+s).classList.toggle('active', s===name);
   });
   document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active', t.dataset.screen===name));
   document.querySelectorAll('.level-chip').forEach(c=>c.classList.toggle('on', c.dataset.level===currentLevel));
-  const titles = {study:'학습 모드', test:'테스트 모드', settings:'설정 · 진도'};
-  document.getElementById('navTitle').textContent = titles[name] + ' · ' + (currentLevel==='custom' ? '내 단어' : currentLevel);
+  const titles = {study:'학습 모드', test:'테스트 모드', settings:'설정 · 진도', listen:'듣기'};
+  document.getElementById('navTitle').textContent = name==='listen' ? titles.listen : (titles[name] + ' · ' + (currentLevel==='custom' ? '내 단어' : currentLevel));
   const sub = document.getElementById('navSub');
   if((name==='study' || name==='test') && currentLevel!=='custom'){
     sub.textContent = activeSettings().dayFrom+'일차 ~ '+activeSettings().dayTo+'일차'+(activeSettings().includeBonus?' + 보너스':'');
@@ -608,6 +716,7 @@ function showScreen(name){
   if(name==='study') renderStudy();
   if(name==='test') renderTest();
   if(name==='settings') renderSettings();
+  if(name==='listen') renderTracks();
 }
 document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click', ()=>showScreen(t.dataset.screen)));
 
@@ -1042,6 +1151,156 @@ document.getElementById('resetRow').addEventListener('click', ()=>{
     toast('진도를 초기화했어요');
   }
 });
+
+/* ================= LISTEN (듣기) ================= */
+function renderTracks(){
+  document.getElementById('trackCount').textContent = TRACKS.length;
+  const list = document.getElementById('trackList');
+  list.innerHTML = '';
+  if(TRACKS.length === 0){
+    list.innerHTML = `<div style="padding:24px 16px; text-align:center; color:var(--gray); font-size:13.5px; line-height:1.7;">
+      아직 등록된 듣기 자료가 없어요.<br>오른쪽 위 '관리'를 눌러 추가해보세요.
+    </div>`;
+  } else {
+    TRACKS.forEach((t, idx)=>{
+      const row = document.createElement('div');
+      row.className = 'track-row';
+      row.innerHTML = `
+        <div class="track-icon"><svg viewBox="0 0 24 24" fill="none"><path d="M8 5v14l11-7z" fill="#fff"/></svg></div>
+        <div class="track-info">
+          <div class="track-title">${t.title || t.filename}</div>
+          <div class="track-file">${t.filename}</div>
+        </div>
+        <button class="track-del" data-idx="${idx}">삭제</button>
+      `;
+      row.addEventListener('click', (e)=>{
+        if(e.target.closest('.track-del')) return;
+        openPlayer(t);
+      });
+      list.appendChild(row);
+    });
+    list.querySelectorAll('.track-del').forEach(btn=>{
+      btn.addEventListener('click', (e)=>{
+        e.stopPropagation();
+        const idx = Number(btn.dataset.idx);
+        TRACKS.splice(idx, 1);
+        saveTracks();
+        renderTracks();
+        toast('삭제했어요');
+      });
+    });
+  }
+}
+document.getElementById('listenManageToggle').addEventListener('click', ()=>{
+  const sec = document.getElementById('listenManageSection');
+  const isOpen = sec.style.display !== 'none';
+  sec.style.display = isOpen ? 'none' : '';
+  document.getElementById('listenManageToggle').textContent = isOpen ? '관리' : '완료';
+});
+document.getElementById('addTracksBulkBtn').addEventListener('click', ()=>{
+  const raw = document.getElementById('trackBulkInput').value;
+  const lines = raw.split('\n').map(l=>l.trim()).filter(Boolean);
+  let added = 0;
+  lines.forEach(line=>{
+    const parts = line.split('|').map(s=>s.trim());
+    const filename = parts[0];
+    const title = parts[1] || filename;
+    if(!filename) return;
+    TRACKS.push({ filename, title });
+    added++;
+  });
+  if(added === 0){ toast('추가할 항목이 없어요'); return; }
+  document.getElementById('trackBulkInput').value = '';
+  saveTracks();
+  renderTracks();
+  toast(`${added}개 추가했어요`);
+});
+
+/* ---- player (wavesurfer) ---- */
+let wsInstance = null;
+let currentSpeed = 1.25;
+function ensureWaveSurfer(){
+  if(wsInstance) return wsInstance;
+  wsInstance = WaveSurfer.create({
+    container: '#waveform',
+    waveColor: '#C7C7CC',
+    progressColor: '#FF3B30',
+    cursorColor: '#1C1C1E',
+    barWidth: 2,
+    barGap: 2,
+    barRadius: 2,
+    height: 64,
+    responsive: true,
+    normalize: true,
+    minPxPerSec: 40,
+    scrollParent: true,
+    partialRender: true,
+  });
+  wsInstance.on('audioprocess', updatePlayerTime);
+  wsInstance.on('seek', updatePlayerTime);
+  wsInstance.on('ready', ()=>{
+    wsInstance.setPlaybackRate(currentSpeed);
+    updatePlayerTime();
+    document.getElementById('playerDuration').textContent = fmtTime(wsInstance.getDuration());
+  });
+  wsInstance.on('play', ()=>{
+    document.getElementById('playerPlayIcon').style.display = 'none';
+    document.getElementById('playerPauseIcon').style.display = '';
+  });
+  wsInstance.on('pause', ()=>{
+    document.getElementById('playerPlayIcon').style.display = '';
+    document.getElementById('playerPauseIcon').style.display = 'none';
+  });
+  wsInstance.on('finish', ()=>{
+    document.getElementById('playerPlayIcon').style.display = '';
+    document.getElementById('playerPauseIcon').style.display = 'none';
+  });
+  return wsInstance;
+}
+function fmtTime(sec){
+  if(!isFinite(sec)) return '0:00';
+  const m = Math.floor(sec/60);
+  const s = Math.floor(sec%60);
+  return m + ':' + String(s).padStart(2,'0');
+}
+function updatePlayerTime(){
+  if(!wsInstance) return;
+  document.getElementById('playerCurTime').textContent = fmtTime(wsInstance.getCurrentTime());
+}
+function openPlayer(track){
+  document.getElementById('playerTitle').textContent = track.title || track.filename;
+  const ws = ensureWaveSurfer();
+  ws.load('audio/' + track.filename);
+  document.getElementById('playerSheet').classList.add('show');
+  document.getElementById('playerBackdrop').classList.add('show');
+}
+function closePlayer(){
+  document.getElementById('playerSheet').classList.remove('show');
+  document.getElementById('playerBackdrop').classList.remove('show');
+  if(wsInstance) wsInstance.pause();
+}
+document.getElementById('playerCloseBtn').addEventListener('click', closePlayer);
+document.getElementById('playerBackdrop').addEventListener('click', closePlayer);
+document.getElementById('playerPlayPause').addEventListener('click', ()=>{
+  if(!wsInstance) return;
+  wsInstance.playPause();
+});
+document.getElementById('playerBack5').addEventListener('click', ()=>{
+  if(!wsInstance) return;
+  wsInstance.skip(-5);
+});
+document.getElementById('playerFwd5').addEventListener('click', ()=>{
+  if(!wsInstance) return;
+  wsInstance.skip(5);
+});
+document.querySelectorAll('#speedRow .speed-chip').forEach(chip=>{
+  chip.addEventListener('click', ()=>{
+    currentSpeed = parseFloat(chip.dataset.speed);
+    document.querySelectorAll('#speedRow .speed-chip').forEach(c=>c.classList.toggle('on', c===chip));
+    if(wsInstance) wsInstance.setPlaybackRate(currentSpeed);
+  });
+});
+
 
 /* ================= INIT ================= */
 (async function init(){
