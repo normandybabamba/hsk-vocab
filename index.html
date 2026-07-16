@@ -260,6 +260,10 @@
   .track-title{font-size:15px; font-weight:600; color:var(--ink); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
   .track-file{font-size:12px; color:var(--gray); margin-top:1px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
   .track-del{background:none; border:none; color:var(--red); font-size:13px; font-weight:600; cursor:pointer; flex-shrink:0; padding:4px 6px;}
+  .folder-header{display:flex; align-items:center; gap:8px; padding:12px 16px; background:#F2F2F3; cursor:pointer; border-bottom:0.5px solid var(--hairline);}
+  .folder-header .folder-chevron{font-size:12px; color:var(--gray); width:12px;}
+  .folder-header .folder-name{flex:1; font-size:13.5px; font-weight:700; color:var(--ink);}
+  .folder-header .folder-count{font-size:12px; color:var(--gray);}
 
   /* ---------- player sheet (iOS Now Playing style) ---------- */
   .player-backdrop{
@@ -290,10 +294,39 @@
   .player-controls .round-btn{position:relative; width:52px; height:52px;}
   .player-controls .round-btn.big{width:68px; height:68px; background:var(--red);}
   .round-btn-label{position:absolute; bottom:6px; left:50%; transform:translateX(-50%); font-size:9px; font-weight:700; color:var(--ink);}
+
+  /* ---------- auth screen ---------- */
+  .auth-screen{
+    position:fixed; inset:0; z-index:500; background:var(--bg);
+    display:flex; align-items:center; justify-content:center; padding:24px;
+  }
+  .auth-screen.hidden{display:none;}
+  .auth-box{width:100%; max-width:340px;}
+  .auth-title{font-size:24px; font-weight:800; text-align:center; margin-bottom:6px;}
+  .auth-sub{font-size:13px; color:var(--ink-2); text-align:center; margin-bottom:24px; line-height:1.6;}
+  .auth-box input{
+    width:100%; border:1px solid var(--hairline); border-radius:12px; padding:13px 14px;
+    font-size:15px; font-family:var(--font-ui); margin-bottom:10px; background:var(--card); color:var(--ink);
+  }
+  .auth-error{color:var(--red); font-size:12.5px; min-height:16px; margin-bottom:8px; text-align:center;}
+  .auth-note{color:var(--gray); font-size:12px; text-align:center; margin-top:14px; line-height:1.6;}
 </style>
 </head>
 <body>
 <div id="app">
+
+  <div class="auth-screen" id="authScreen">
+    <div class="auth-box">
+      <div class="auth-title">HSK 단어장</div>
+      <div class="auth-sub">이름과 4자리 비밀번호로 로그인하면 내 진도가 어느 기기에서든 그대로 보여요</div>
+      <input type="text" id="authName" placeholder="이름" autocomplete="username">
+      <input type="tel" id="authPin" placeholder="4자리 비밀번호" inputmode="numeric" maxlength="4" pattern="[0-9]*" autocomplete="current-password">
+      <div class="auth-error" id="authError"></div>
+      <button class="primary-btn" id="authLoginBtn">로그인</button>
+      <button class="primary-btn" id="authSignupBtn" style="background:var(--card); color:var(--blue); border:1.5px solid var(--blue); margin-top:8px;">처음이에요, 계정 만들기</button>
+      <div class="auth-note" id="authNote"></div>
+    </div>
+  </div>
 
   <div class="navbar" id="navbar">
     <h1 id="navTitle">HSK 단어장</h1>
@@ -477,6 +510,10 @@
           <div class="label" style="color:var(--red);">현재 진도 초기화</div>
           <span class="value">›</span>
         </div>
+        <div class="row" style="cursor:pointer;" id="logoutRow">
+          <div class="label">로그아웃<span class="desc" id="accountEmailDesc"></span></div>
+          <span class="value">›</span>
+        </div>
       </div>
       <input type="file" id="importFile" accept="application/json">
     </div>
@@ -497,10 +534,11 @@
       <div class="section-title">여러 개 한번에 추가</div>
       <div class="card-group">
         <div class="form-row">
-          <textarea id="trackBulkInput" rows="5" placeholder="한 줄에 하나씩: 파일명.mp3 | 제목&#10;예)&#10;01_intro.mp3 | 1과 소개&#10;02_dialogue.mp3 | 1과 회화"></textarea>
+          <textarea id="trackBulkInput" rows="8" placeholder="## 폴더명 줄로 폴더를 나누고, 그 아래 파일명을 한 줄씩 쓰세요&#10;예)&#10;## 1일차&#10;01-00.mp3&#10;01-01.mp3&#10;## 2일차&#10;02-00.mp3 | 제목(선택)"></textarea>
         </div>
       </div>
       <button class="primary-btn" id="addTracksBulkBtn">한번에 추가</button>
+      <button class="primary-btn" id="clearAllTracksBtn" style="background:var(--red-dim); color:var(--red); margin-top:8px;">전체 삭제</button>
       <div style="font-size:12px; color:var(--gray); padding:10px 16px 0; line-height:1.6;">
         파일명은 GitHub 저장소의 <code>audio/</code> 폴더에 올려두신 mp3 파일명과 정확히 같아야 해요.
       </div>
@@ -567,6 +605,7 @@
 
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/wavesurfer.js/2.0.4/wavesurfer.min.js"></script>
 <script>
 const FIREBASE_CONFIG = {
@@ -585,17 +624,20 @@ const BONUS4 = [{"id": "4-1", "hanzi": "保修期", "pinyin": "bǎoxiūqī", "me
 const TOTAL_DAYS = { '3급': 23, '4급': 44 };
 let CUSTOM = [];
 
-/* ---------------- storage: Firebase Firestore cloud sync ----------------
-   기기·브라우저 상관없이 이 문서 하나(hsk_progress/main)를 모두가 함께 읽고 쓰기 때문에
-   같은 링크를 아이폰/컴퓨터 어디서 열어도 진도가 똑같이 보여요. */
+/* ---------------- storage: Firebase Firestore cloud sync (per-account) ----------------
+   각자 이메일로 로그인하면 그 계정 고유 문서(hsk_progress/{uid})를 읽고 쓰기 때문에
+   같은 계정으로 어느 기기에서 열어도 그 사람의 진도만 그대로 보여요. */
+let firestoreAuth = null;
 let firestoreDb = null;
 let firebaseOk = false;
 try{
   firebase.initializeApp(FIREBASE_CONFIG);
   firestoreDb = firebase.firestore();
+  firestoreAuth = firebase.auth();
   firebaseOk = true;
 }catch(e){ console.error('Firebase init failed', e); firebaseOk = false; }
-const PROGRESS_DOC = firebaseOk ? firestoreDb.collection('hsk_progress').doc('main') : null;
+let PROGRESS_DOC = null;
+let currentUser = null;
 
 let memorized = new Set();
 let currentLevel = '3급'; // '3급' | '4급' | 'custom'
@@ -700,6 +742,7 @@ function toast(msg){
 /* ---------------- tab switching ---------------- */
 const screens = ['study','test','settings','listen'];
 function showScreen(name){
+  if(name==='listen' && !canUseListen()) name = 'study';
   screens.forEach(s=>{
     document.getElementById('screen-'+s).classList.toggle('active', s===name);
   });
@@ -924,6 +967,7 @@ function clampDays(){
 }
 function renderSettings(){
   clampDays();
+  document.getElementById('accountEmailDesc').textContent = currentUser ? currentUser.email : '';
 
   document.querySelectorAll('#levelRowSettings .level-chip').forEach(c=>c.classList.toggle('on', c.dataset.level===currentLevel));
 
@@ -1151,8 +1195,14 @@ document.getElementById('resetRow').addEventListener('click', ()=>{
     toast('진도를 초기화했어요');
   }
 });
+document.getElementById('logoutRow').addEventListener('click', ()=>{
+  if(confirm('로그아웃할까요?')){
+    logout();
+  }
+});
 
 /* ================= LISTEN (듣기) ================= */
+let openFolders = new Set();
 function renderTracks(){
   document.getElementById('trackCount').textContent = TRACKS.length;
   const list = document.getElementById('trackList');
@@ -1161,8 +1211,30 @@ function renderTracks(){
     list.innerHTML = `<div style="padding:24px 16px; text-align:center; color:var(--gray); font-size:13.5px; line-height:1.7;">
       아직 등록된 듣기 자료가 없어요.<br>오른쪽 위 '관리'를 눌러 추가해보세요.
     </div>`;
-  } else {
-    TRACKS.forEach((t, idx)=>{
+    return;
+  }
+  // group by folder, preserving first-appearance order
+  const folderOrder = [];
+  const groups = {};
+  TRACKS.forEach((t, idx)=>{
+    const f = t.folder || '미분류';
+    if(!groups[f]){ groups[f] = []; folderOrder.push(f); }
+    groups[f].push({ ...t, _idx: idx });
+  });
+  if(folderOrder.length && openFolders.size === 0) openFolders.add(folderOrder[0]);
+
+  folderOrder.forEach(folderName=>{
+    const isOpen = openFolders.has(folderName);
+    const header = document.createElement('div');
+    header.className = 'folder-header';
+    header.innerHTML = `<span class="folder-chevron">${isOpen ? '▾' : '▸'}</span><span class="folder-name">${folderName}</span><span class="folder-count">${groups[folderName].length}개</span>`;
+    header.addEventListener('click', ()=>{
+      if(openFolders.has(folderName)) openFolders.delete(folderName); else openFolders.add(folderName);
+      renderTracks();
+    });
+    list.appendChild(header);
+    if(!isOpen) return;
+    groups[folderName].forEach(t=>{
       const row = document.createElement('div');
       row.className = 'track-row';
       row.innerHTML = `
@@ -1171,7 +1243,7 @@ function renderTracks(){
           <div class="track-title">${t.title || t.filename}</div>
           <div class="track-file">${t.filename}</div>
         </div>
-        <button class="track-del" data-idx="${idx}">삭제</button>
+        <button class="track-del" data-idx="${t._idx}">삭제</button>
       `;
       row.addEventListener('click', (e)=>{
         if(e.target.closest('.track-del')) return;
@@ -1179,17 +1251,17 @@ function renderTracks(){
       });
       list.appendChild(row);
     });
-    list.querySelectorAll('.track-del').forEach(btn=>{
-      btn.addEventListener('click', (e)=>{
-        e.stopPropagation();
-        const idx = Number(btn.dataset.idx);
-        TRACKS.splice(idx, 1);
-        saveTracks();
-        renderTracks();
-        toast('삭제했어요');
-      });
+  });
+  list.querySelectorAll('.track-del').forEach(btn=>{
+    btn.addEventListener('click', (e)=>{
+      e.stopPropagation();
+      const idx = Number(btn.dataset.idx);
+      TRACKS.splice(idx, 1);
+      saveTracks();
+      renderTracks();
+      toast('삭제했어요');
     });
-  }
+  });
 }
 document.getElementById('listenManageToggle').addEventListener('click', ()=>{
   const sec = document.getElementById('listenManageSection');
@@ -1197,16 +1269,28 @@ document.getElementById('listenManageToggle').addEventListener('click', ()=>{
   sec.style.display = isOpen ? 'none' : '';
   document.getElementById('listenManageToggle').textContent = isOpen ? '관리' : '완료';
 });
+document.getElementById('clearAllTracksBtn').addEventListener('click', ()=>{
+  if(TRACKS.length===0){ toast('삭제할 항목이 없어요'); return; }
+  if(confirm(`등록된 듣기 자료 ${TRACKS.length}개를 전부 삭제할까요?`)){
+    TRACKS = [];
+    saveTracks();
+    renderTracks();
+    toast('전체 삭제했어요');
+  }
+});
 document.getElementById('addTracksBulkBtn').addEventListener('click', ()=>{
   const raw = document.getElementById('trackBulkInput').value;
   const lines = raw.split('\n').map(l=>l.trim()).filter(Boolean);
   let added = 0;
+  let currentFolder = '';
   lines.forEach(line=>{
+    const folderMatch = line.match(/^##\s*(.+)$/);
+    if(folderMatch){ currentFolder = folderMatch[1].trim(); return; }
     const parts = line.split('|').map(s=>s.trim());
     const filename = parts[0];
     const title = parts[1] || filename;
     if(!filename) return;
-    TRACKS.push({ filename, title });
+    TRACKS.push({ filename, title, folder: currentFolder });
     added++;
   });
   if(added === 0){ toast('추가할 항목이 없어요'); return; }
@@ -1216,9 +1300,18 @@ document.getElementById('addTracksBulkBtn').addEventListener('click', ()=>{
   toast(`${added}개 추가했어요`);
 });
 
-/* ---- player (wavesurfer) ---- */
+/* ---- player (wavesurfer, iOS-safe MediaElement backend) ---- */
 let wsInstance = null;
 let currentSpeed = 1.25;
+function fakePeaks(seedStr, n){
+  n = n || 200;
+  let seed = 0;
+  for(let i=0;i<seedStr.length;i++) seed = (seed*31 + seedStr.charCodeAt(i)) % 100000;
+  function rnd(){ seed = (seed*9301+49297) % 233280; return seed/233280; }
+  const peaks = [];
+  for(let i=0;i<n;i++) peaks.push(0.12 + rnd()*0.85);
+  return peaks;
+}
 function ensureWaveSurfer(){
   if(wsInstance) return wsInstance;
   wsInstance = WaveSurfer.create({
@@ -1235,6 +1328,9 @@ function ensureWaveSurfer(){
     minPxPerSec: 40,
     scrollParent: true,
     partialRender: true,
+    backend: 'MediaElement',
+    mediaControls: false,
+    forceDecode: false,
   });
   wsInstance.on('audioprocess', updatePlayerTime);
   wsInstance.on('seek', updatePlayerTime);
@@ -1242,6 +1338,10 @@ function ensureWaveSurfer(){
     wsInstance.setPlaybackRate(currentSpeed);
     updatePlayerTime();
     document.getElementById('playerDuration').textContent = fmtTime(wsInstance.getDuration());
+  });
+  wsInstance.on('error', (err)=>{
+    toast('음성 파일을 불러올 수 없어요. 파일명을 확인해주세요');
+    console.error('WaveSurfer error', err);
   });
   wsInstance.on('play', ()=>{
     document.getElementById('playerPlayIcon').style.display = 'none';
@@ -1270,7 +1370,7 @@ function updatePlayerTime(){
 function openPlayer(track){
   document.getElementById('playerTitle').textContent = track.title || track.filename;
   const ws = ensureWaveSurfer();
-  ws.load('audio/' + track.filename);
+  ws.load('audio/' + track.filename, fakePeaks(track.filename));
   document.getElementById('playerSheet').classList.add('show');
   document.getElementById('playerBackdrop').classList.add('show');
 }
@@ -1302,13 +1402,98 @@ document.querySelectorAll('#speedRow .speed-chip').forEach(chip=>{
 });
 
 
+/* ================= AUTH ================= */
+function emailToDocId(uid){ return uid; }
+async function migrateOldSharedDataIfNeeded(uid){
+  // 최초로 계정을 만든 사람에게, 기존 공용 진도(hsk_progress/main)를 시작값으로 복사해줘요.
+  try{
+    const mainDoc = await firestoreDb.collection('hsk_progress').doc('main').get();
+    if(mainDoc.exists){
+      const data = mainDoc.data();
+      data.migratedFrom = 'main';
+      await firestoreDb.collection('hsk_progress').doc(uid).set(data);
+      return true;
+    }
+  }catch(e){ console.error('migration failed', e); }
+  return false;
+}
+function showAuthError(msg){
+  document.getElementById('authError').textContent = msg || '';
+}
+function authScreenShow(show){
+  document.getElementById('authScreen').classList.toggle('hidden', !show);
+}
+/* 이름/4자리 비밀번호를 파이어베이스가 요구하는 이메일/6자 이상 비밀번호 형식으로 내부 변환 */
+function nameToEmail(name){
+  const codes = Array.from(name.trim()).map(c=>c.codePointAt(0));
+  return 'u' + codes.join('-') + '@hskapp.local';
+}
+function pinToPassword(pin){
+  return pin + '-hskpin';
+}
+document.getElementById('authLoginBtn').addEventListener('click', async ()=>{
+  const name = document.getElementById('authName').value.trim();
+  const pin = document.getElementById('authPin').value.trim();
+  showAuthError('');
+  if(!name || !pin){ showAuthError('이름과 비밀번호를 입력해주세요'); return; }
+  if(!/^\d{4}$/.test(pin)){ showAuthError('비밀번호는 숫자 4자리예요'); return; }
+  try{
+    await firestoreAuth.signInWithEmailAndPassword(nameToEmail(name), pinToPassword(pin));
+  }catch(e){
+    showAuthError(e.code === 'auth/invalid-credential' || e.code === 'auth/wrong-password' || e.code === 'auth/user-not-found'
+      ? '이름 또는 비밀번호가 맞지 않아요' : '로그인에 실패했어요 (' + e.code + ')');
+  }
+});
+document.getElementById('authSignupBtn').addEventListener('click', async ()=>{
+  const name = document.getElementById('authName').value.trim();
+  const pin = document.getElementById('authPin').value.trim();
+  showAuthError('');
+  if(!name || !pin){ showAuthError('이름과 비밀번호를 입력해주세요'); return; }
+  if(!/^\d{4}$/.test(pin)){ showAuthError('비밀번호는 숫자 4자리로 만들어주세요'); return; }
+  try{
+    const cred = await firestoreAuth.createUserWithEmailAndPassword(nameToEmail(name), pinToPassword(pin));
+    await cred.user.updateProfile({ displayName: name });
+    const migrated = await migrateOldSharedDataIfNeeded(cred.user.uid);
+    if(migrated) toast('기존 진도를 이 계정으로 가져왔어요');
+  }catch(e){
+    showAuthError(e.code === 'auth/email-already-in-use' ? '이미 있는 이름이에요. 로그인해주세요'
+      : '계정 생성에 실패했어요 (' + e.code + ')');
+  }
+});
+async function logout(){
+  await firestoreAuth.signOut();
+}
+
 /* ================= INIT ================= */
-(async function init(){
-  await loadAll();
-  clampDays();
-  document.querySelectorAll('.level-chip').forEach(c=>c.classList.toggle('on', c.dataset.level===currentLevel));
-  showScreen('study');
-})();
+const LISTEN_ALLOWED_NAME = '이정빈';
+function canUseListen(){ return currentUser && currentUser.displayName === LISTEN_ALLOWED_NAME; }
+function applyListenAccess(){
+  const tab = document.querySelector('.tab[data-screen="listen"]');
+  if(tab) tab.style.display = canUseListen() ? '' : 'none';
+}
+if(firebaseOk){
+  firestoreAuth.onAuthStateChanged(async (user)=>{
+    if(user){
+      currentUser = user;
+      PROGRESS_DOC = firestoreDb.collection('hsk_progress').doc(emailToDocId(user.uid));
+      authScreenShow(false);
+      await loadAll();
+      clampDays();
+      applyListenAccess();
+      document.querySelectorAll('.level-chip').forEach(c=>c.classList.toggle('on', c.dataset.level===currentLevel));
+      showScreen('study');
+    } else {
+      currentUser = null;
+      authScreenShow(true);
+    }
+  });
+} else {
+  authScreenShow(false);
+  (async function init(){
+    clampDays();
+    showScreen('study');
+  })();
+}
 </script>
 </body>
 </html>
