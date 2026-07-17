@@ -506,6 +506,10 @@
           <div class="label">백업 파일 불러오기<span class="desc">저장해둔 파일에서 복원해요</span></div>
           <span class="value">›</span>
         </div>
+        <div class="row" style="cursor:pointer;" id="importOldMainRow">
+          <div class="label" style="color:var(--blue);">예전 진도 가져오기<span class="desc">로그인 전 데이터를 이 계정으로 복사해요</span></div>
+          <span class="value">›</span>
+        </div>
         <div class="row" style="cursor:pointer;" id="resetRow">
           <div class="label" style="color:var(--red);">현재 진도 초기화</div>
           <span class="value">›</span>
@@ -1198,6 +1202,19 @@ document.getElementById('resetRow').addEventListener('click', ()=>{
 document.getElementById('logoutRow').addEventListener('click', ()=>{
   if(confirm('로그아웃할까요?')){
     logout();
+  }
+});
+document.getElementById('importOldMainRow').addEventListener('click', async ()=>{
+  if(!currentUser){ toast('로그인 후 이용해주세요'); return; }
+  if(!confirm('로그인 전에 쓰던 진도·내 단어·듣기 목록을 지금 이 계정으로 가져올까요? 지금 이 계정의 데이터는 덮어써져요.')) return;
+  const migrated = await migrateOldSharedDataIfNeeded(currentUser.uid);
+  if(migrated){
+    await loadAll();
+    clampDays();
+    renderSettings();
+    toast('예전 진도를 가져왔어요');
+  } else {
+    toast('가져올 예전 데이터를 찾지 못했어요 (보안 규칙을 먼저 확인해주세요)');
   }
 });
 
