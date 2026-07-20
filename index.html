@@ -282,7 +282,20 @@
   .player-handle{width:36px; height:5px; background:var(--gray-light); border-radius:3px; margin:4px auto 14px;}
   .player-close{position:absolute; top:14px; right:16px; background:none; border:none; width:30px; height:30px; display:flex; align-items:center; justify-content:center; cursor:pointer;}
   .player-title{font-size:16px; font-weight:700; text-align:center; margin-bottom:16px; padding:0 30px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
-  #waveform{width:100%; margin-bottom:8px; border-radius:10px; overflow:hidden; cursor:pointer;}
+  .wave-seek-wrap{position:relative; width:100%; height:64px; margin-bottom:8px;}
+  .fake-wave{position:absolute; inset:0; display:flex; align-items:center; gap:2px; padding:0 1px; pointer-events:none;}
+  .fake-wave .bar{flex:1; background:var(--gray-light); border-radius:2px; min-width:2px;}
+  .fake-wave .bar.played{background:var(--red);}
+  .seek-range{
+    position:absolute; inset:0; width:100%; height:64px; margin:0;
+    -webkit-appearance:none; appearance:none; background:transparent; cursor:pointer;
+  }
+  .seek-range::-webkit-slider-runnable-track{background:transparent; height:64px;}
+  .seek-range::-webkit-slider-thumb{
+    -webkit-appearance:none; width:2px; height:56px; background:var(--ink); border-radius:1px; margin-top:4px;
+  }
+  .seek-range::-moz-range-track{background:transparent; height:64px;}
+  .seek-range::-moz-range-thumb{width:2px; height:56px; background:var(--ink); border:none; border-radius:1px;}
   .player-time-row{display:flex; justify-content:space-between; font-size:11.5px; color:var(--gray); font-variant-numeric:tabular-nums; margin-bottom:16px;}
   .speed-row{display:flex; gap:6px; margin-bottom:20px;}
   .speed-row .speed-chip{
@@ -556,7 +569,11 @@
       <svg viewBox="0 0 24 24" fill="none"><path d="M6 6l12 12M18 6L6 18" stroke="#8E8E93" stroke-width="2" stroke-linecap="round"/></svg>
     </button>
     <div class="player-title" id="playerTitle">-</div>
-    <div id="waveform"></div>
+    <audio id="playerAudio" preload="metadata" playsinline></audio>
+    <div class="wave-seek-wrap">
+      <div class="fake-wave" id="fakeWave"></div>
+      <input type="range" id="playerSeek" class="seek-range" min="0" max="1000" value="0" step="1">
+    </div>
     <div class="player-time-row">
       <span id="playerCurTime">0:00</span>
       <span id="playerDuration">0:00</span>
@@ -610,7 +627,6 @@
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/wavesurfer.js/2.0.4/wavesurfer.min.js"></script>
 <script>
 const FIREBASE_CONFIG = {
   apiKey: "AIzaSyCcLtQL2r4c3q-NFcV9aLFijZFEZaiR4CI",
@@ -1317,104 +1333,111 @@ document.getElementById('addTracksBulkBtn').addEventListener('click', ()=>{
   toast(`${added}개 추가했어요`);
 });
 
-/* ---- player (wavesurfer, iOS-safe MediaElement backend) ---- */
-let wsInstance = null;
+/* ---- player (native HTML5 audio — most reliable on iOS Safari) ---- */
 let currentSpeed = 1.25;
-function fakePeaks(seedStr, n){
-  n = n || 200;
+let isSeeking = false;
+const playerAudio = document.getElementById('playerAudio');
+function fakeWaveBars(seedStr, n){
+  n = n || 60;
   let seed = 0;
   for(let i=0;i<seedStr.length;i++) seed = (seed*31 + seedStr.charCodeAt(i)) % 100000;
   function rnd(){ seed = (seed*9301+49297) % 233280; return seed/233280; }
-  const peaks = [];
-  for(let i=0;i<n;i++) peaks.push(0.12 + rnd()*0.85);
-  return peaks;
+  const heights = [];
+  for(let i=0;i<n;i++) heights.push(14 + rnd()*50);
+  return heights;
 }
-function ensureWaveSurfer(){
-  if(wsInstance) return wsInstance;
-  wsInstance = WaveSurfer.create({
-    container: '#waveform',
-    waveColor: '#C7C7CC',
-    progressColor: '#FF3B30',
-    cursorColor: '#1C1C1E',
-    barWidth: 2,
-    barGap: 2,
-    barRadius: 2,
-    height: 64,
-    responsive: true,
-    normalize: true,
-    minPxPerSec: 40,
-    scrollParent: true,
-    partialRender: true,
-    backend: 'MediaElement',
-    mediaControls: false,
-    forceDecode: false,
-  });
-  wsInstance.on('audioprocess', updatePlayerTime);
-  wsInstance.on('seek', updatePlayerTime);
-  wsInstance.on('ready', ()=>{
-    wsInstance.setPlaybackRate(currentSpeed);
-    updatePlayerTime();
-    document.getElementById('playerDuration').textContent = fmtTime(wsInstance.getDuration());
-  });
-  wsInstance.on('error', (err)=>{
-    toast('음성 파일을 불러올 수 없어요. 파일명을 확인해주세요');
-    console.error('WaveSurfer error', err);
-  });
-  wsInstance.on('play', ()=>{
-    document.getElementById('playerPlayIcon').style.display = 'none';
-    document.getElementById('playerPauseIcon').style.display = '';
-  });
-  wsInstance.on('pause', ()=>{
-    document.getElementById('playerPlayIcon').style.display = '';
-    document.getElementById('playerPauseIcon').style.display = 'none';
-  });
-  wsInstance.on('finish', ()=>{
-    document.getElementById('playerPlayIcon').style.display = '';
-    document.getElementById('playerPauseIcon').style.display = 'none';
-  });
-  return wsInstance;
+function renderFakeWave(filename, progressRatio){
+  const wrap = document.getElementById('fakeWave');
+  const heights = fakeWaveBars(filename);
+  const playedCount = Math.round(heights.length * (progressRatio || 0));
+  wrap.innerHTML = heights.map((h,i)=>`<div class="bar${i<playedCount?' played':''}" style="height:${h}%;"></div>`).join('');
 }
 function fmtTime(sec){
-  if(!isFinite(sec)) return '0:00';
+  if(!isFinite(sec) || sec == null) return '0:00';
   const m = Math.floor(sec/60);
   const s = Math.floor(sec%60);
   return m + ':' + String(s).padStart(2,'0');
 }
-function updatePlayerTime(){
-  if(!wsInstance) return;
-  document.getElementById('playerCurTime').textContent = fmtTime(wsInstance.getCurrentTime());
+function updatePlayerUI(){
+  const cur = playerAudio.currentTime || 0;
+  const dur = playerAudio.duration || 0;
+  document.getElementById('playerCurTime').textContent = fmtTime(cur);
+  document.getElementById('playerDuration').textContent = fmtTime(dur);
+  if(!isSeeking){
+    document.getElementById('playerSeek').value = dur ? Math.round((cur/dur)*1000) : 0;
+  }
+  renderFakeWave(currentTrackFilename, dur ? cur/dur : 0);
 }
+let currentTrackFilename = '';
 function openPlayer(track){
   document.getElementById('playerTitle').textContent = track.title || track.filename;
-  const ws = ensureWaveSurfer();
-  ws.load('audio/' + track.filename, fakePeaks(track.filename));
+  currentTrackFilename = track.filename;
+  document.getElementById('playerSeek').value = 0;
+  document.getElementById('playerCurTime').textContent = '0:00';
+  document.getElementById('playerDuration').textContent = '0:00';
+  renderFakeWave(track.filename, 0);
+  playerAudio.pause();
+  playerAudio.src = 'audio/' + track.filename;
+  playerAudio.playbackRate = currentSpeed;
+  playerAudio.load();
   document.getElementById('playerSheet').classList.add('show');
   document.getElementById('playerBackdrop').classList.add('show');
+  const p = playerAudio.play();
+  if(p && p.catch) p.catch(()=>{ /* iOS는 사용자가 재생 버튼을 다시 눌러야 할 수 있어요 */ });
 }
 function closePlayer(){
   document.getElementById('playerSheet').classList.remove('show');
   document.getElementById('playerBackdrop').classList.remove('show');
-  if(wsInstance) wsInstance.pause();
+  playerAudio.pause();
 }
+playerAudio.addEventListener('timeupdate', updatePlayerUI);
+playerAudio.addEventListener('loadedmetadata', updatePlayerUI);
+playerAudio.addEventListener('durationchange', updatePlayerUI);
+playerAudio.addEventListener('error', ()=>{
+  toast('음성 파일을 불러올 수 없어요. 파일명을 확인해주세요');
+  console.error('audio error', playerAudio.error);
+});
+playerAudio.addEventListener('play', ()=>{
+  document.getElementById('playerPlayIcon').style.display = 'none';
+  document.getElementById('playerPauseIcon').style.display = '';
+});
+playerAudio.addEventListener('pause', ()=>{
+  document.getElementById('playerPlayIcon').style.display = '';
+  document.getElementById('playerPauseIcon').style.display = 'none';
+});
+playerAudio.addEventListener('ended', ()=>{
+  document.getElementById('playerPlayIcon').style.display = '';
+  document.getElementById('playerPauseIcon').style.display = 'none';
+});
 document.getElementById('playerCloseBtn').addEventListener('click', closePlayer);
 document.getElementById('playerBackdrop').addEventListener('click', closePlayer);
 document.getElementById('playerPlayPause').addEventListener('click', ()=>{
-  if(!wsInstance) return;
-  wsInstance.playPause();
+  if(playerAudio.paused) playerAudio.play(); else playerAudio.pause();
 });
 document.getElementById('playerBack5').addEventListener('click', ()=>{
-  if(!wsInstance) return;
-  wsInstance.skip(-5);
+  playerAudio.currentTime = Math.max(0, playerAudio.currentTime - 5);
 });
 document.getElementById('playerFwd5').addEventListener('click', ()=>{
-  if(!wsInstance) return;
-  wsInstance.skip(5);
+  playerAudio.currentTime = Math.min(playerAudio.duration || Infinity, playerAudio.currentTime + 5);
+});
+const seekEl = document.getElementById('playerSeek');
+seekEl.addEventListener('input', ()=>{
+  isSeeking = true;
+  const dur = playerAudio.duration || 0;
+  const ratio = seekEl.value / 1000;
+  document.getElementById('playerCurTime').textContent = fmtTime(dur * ratio);
+  renderFakeWave(currentTrackFilename, ratio);
+});
+seekEl.addEventListener('change', ()=>{
+  const dur = playerAudio.duration || 0;
+  playerAudio.currentTime = dur * (seekEl.value / 1000);
+  isSeeking = false;
 });
 document.querySelectorAll('#speedRow .speed-chip').forEach(chip=>{
   chip.addEventListener('click', ()=>{
     currentSpeed = parseFloat(chip.dataset.speed);
     document.querySelectorAll('#speedRow .speed-chip').forEach(c=>c.classList.toggle('on', c===chip));
-    if(wsInstance) wsInstance.setPlaybackRate(currentSpeed);
+    playerAudio.playbackRate = currentSpeed;
   });
 });
 
